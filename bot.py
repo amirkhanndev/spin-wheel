@@ -1,121 +1,239 @@
-import random
-from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
 
-API_TOKEN = '7338152003:AAEflY4nO79DXsY1xhnSf26xDd7DGiuZKR4'  # Telegram BotFather'dan olingan tokenni shu yerga kiriting
+# Bosqichlar
+LANGUAGE, NAME, LOCATION, PHONE = range(4)
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+# Ma'lumotlarni saqlash uchun bo'sh lug'at
+user_data = {}
 
-# Karta to'plami
-deck = ['6♦', '6♣', '6♥', '6♠', '7♦', '7♣', '7♥', '7♠', '8♦', '8♣', '8♥', '8♠',
-        '9♦', '9♣', '9♥', '9♠', '10♦', '10♣', '10♥', '10♠', 'J♦', 'J♣', 'J♥', 'J♠',
-        'Q♦', 'Q♣', 'Q♥', 'Q♠', 'K♦', 'K♣', 'K♥', 'K♠', 'A♦', 'A♣', 'A♥', 'A♠']
+# Til bo'yicha tarjimalar
+translations = {
+    "O'zbek lotin": {
+        "start": "Iltimos, tilni tanlang:",
+        "name": "Ismingizni kiriting:",
+        "location": "Yashash viloyati yoki shahringizni kiriting:",
+        "phone": "Telefon raqamingizni kiriting yoki ulashing:",
+        "thank_you": "Rahmat! Ma'lumotlaringiz saqlandi!",
+    },
+    "O'zbek krill": {
+        "start": "Илтимос, тилни танланг:",
+        "name": "Исмингизни киритинг:",
+        "location": "Яшаш вилояти ёки шаҳарингизни киритинг:",
+        "phone": "Телефон рақамингизни киритинг ёки улашинг:",
+        "thank_you": "Рахмат! Маълумотларингиз сақланди!",
+    },
+    "Rus": {
+        "start": "Пожалуйста, выберите язык:",
+        "name": "Введите ваше имя:",
+        "location": "Введите ваш город или область:",
+        "phone": "Введите или поделитесь своим номером телефона:",
+        "thank_you": "Спасибо! Ваши данные сохранены!",
+    },
+    "Eng": {
+        "start": "Please select your language:",
+        "name": "Enter your name:",
+        "location": "Enter your city or region:",
+        "phone": "Enter or share your phone number:",
+        "thank_you": "Thank you! Your data has been saved!",
+    },
+}
 
-# Foydalanuvchilar ma'lumotlarini saqlash
-games = {}
+# /start komandasi
+def start(update: Update, context: CallbackContext) -> int:
+    buttons = [
+        ["O'zbek lotin", "O'zbek krill"],
+        ["Rus", "Eng"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True)
+    update.message.reply_text("Iltimos, tilni tanlang:", reply_markup=reply_markup)
+    return LANGUAGE
 
-# O'yinni boshlash uchun komandani qo'lga olish
-@dp.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    await message.reply("Salom! Durak o'yiniga xush kelibsiz. O'yinni boshlash uchun '/play' buyruqni kiriting!")
+# Tilni tanlash
+def set_language(update: Update, context: CallbackContext) -> int:
+    language = update.message.text
+    user_data['language'] = language
+    update.message.reply_text(translations[language]["name"])
+    return NAME
 
-# O'yinni boshlash
-@dp.message_handler(commands=['play'])
-async def start_game(message: types.Message):
-    user_id = message.from_user.id
-    
-    # O'yinchini ro'yxatga olish
-    if user_id not in games:
-        games[user_id] = {
-            'deck': deck.copy(),
-            'user_hand': [],
-            'bot_hand': [],
-            'trump_card': '',
-            'turn': 'user',  # o'yinni kim boshlaydi
-        }
-        random.shuffle(games[user_id]['deck'])  # Karta to'plamini aralashtirish
-        games[user_id]['trump_card'] = games[user_id]['deck'].pop()  # Kozir kartani olish
-        await message.reply(f"O'yin boshlandi! Kozir karta: {games[user_id]['trump_card']}")
-        
-        # Kartalarni o'yinchilarga taqsimlash
-        for _ in range(6):
-            games[user_id]['user_hand'].append(games[user_id]['deck'].pop())
-            games[user_id]['bot_hand'].append(games[user_id]['deck'].pop())
-        
-        await message.reply(f"Sizning qo'lingiz: {', '.join(games[user_id]['user_hand'])}")
-        await bot_turn(message)
+# Ismni olish
+def set_name(update: Update, context: CallbackContext) -> int:
+    user_data['name'] = update.message.text
+    language = user_data['language']
+    update.message.reply_text(translations[language]["location"])
+    return LOCATION
 
-# Bot harakati
-async def bot_turn(message):
-    user_id = message.from_user.id
-    
-    if games[user_id]['turn'] == 'bot':
-        bot_card = random.choice(games[user_id]['bot_hand'])
-        games[user_id]['bot_hand'].remove(bot_card)
-        games[user_id]['turn'] = 'user'
-        await message.reply(f"Bot {bot_card} kartasini tashladi.")
-        await message.reply(f"Sizning navbatingiz. Kartani tashlang yoki 'olaman' deb yozing.")
+# Viloyat yoki shaharni olish
+def set_location(update: Update, context: CallbackContext) -> int:
+    user_data['location'] = update.message.text
+    language = user_data['language']
+    button = KeyboardButton(translations[language]["phone"], request_contact=True)
+    reply_markup = ReplyKeyboardMarkup([[button]], one_time_keyboard=True)
+    update.message.reply_text(translations[language]["phone"], reply_markup=reply_markup)
+    return PHONE
+
+# Telefon raqamni olish
+def set_phone(update: Update, context: CallbackContext) -> int:
+    if update.message.contact:
+        user_data['phone'] = update.message.contact.phone_number
     else:
-        await message.reply("Botning navbati emas.")
+        user_data['phone'] = update.message.text
+    
+    language = user_data['language']
+    update.message.reply_text(
+        f"{translations[language]['thank_you']}\n\n"
+        f"Til: {language}\n"
+        f"Ism: {user_data['name']}\n"
+        f"Shahar: {user_data['location']}\n"
+        f"Telefon: {user_data['phone']}"
+    )
+    return ConversationHandler.END
 
-# O'yinchi harakati
-@dp.message_handler(lambda message: True)
-async def player_turn(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in games:
-        await message.reply("Iltimos, o'yinni boshlash uchun '/play' buyruqni kiriting!")
-        return
+# Bekor qilish funksiyasi
+def cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("Jarayon bekor qilindi.")
+    return ConversationHandler.END
 
-    user_input = message.text.upper()
+def main():
+    # Tokenni bu yerga qo'shing
+    updater = Updater("8140989674:AAERkKxQtwoI9NvAaNMZ125Q-9SjXpDlIB4")
+    dispatcher = updater.dispatcher
 
-    if user_input == 'OLAMAN':
-        await message.reply("Siz kartalarni oldingiz. Endi botning navbati.")
-        games[user_id]['turn'] = 'bot'
-        await bot_turn(message)
-        return
+    # Suhbat boshqaruvchisi
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            LANGUAGE: [MessageHandler(Filters.text & ~Filters.command, set_language)],
+            NAME: [MessageHandler(Filters.text & ~Filters.command, set_name)],
+            LOCATION: [MessageHandler(Filters.text & ~Filters.command, set_location)],
+            PHONE: [MessageHandler(Filters.contact | Filters.text & ~Filters.command, set_phone)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
-    if user_input in games[user_id]['user_hand']:
-        games[user_id]['user_hand'].remove(user_input)
-        await message.reply(f"Siz {user_input} kartasini tashladingiz. Botning navbati.")
-        games[user_id]['turn'] = 'bot'
-        await bot_turn(message)
+    dispatcher.add_handler(conv_handler)
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
+
+# Bosqichlar
+LANGUAGE, NAME, LOCATION, PHONE = range(4)
+
+# Ma'lumotlarni saqlash uchun bo'sh lug'at
+user_data = {}
+
+# Til bo'yicha tarjimalar
+translations = {
+    "O'zbek lotin": {
+        "start": "Iltimos, tilni tanlang:",
+        "name": "Ismingizni kiriting:",
+        "location": "Yashash viloyati yoki shahringizni kiriting:",
+        "phone": "Telefon raqamingizni kiriting yoki ulashing:",
+        "thank_you": "Rahmat! Ma'lumotlaringiz saqlandi!",
+    },
+    "O'zbek krill": {
+        "start": "Илтимос, тилни танланг:",
+        "name": "Исмингизни киритинг:",
+        "location": "Яшаш вилояти ёки шаҳарингизни киритинг:",
+        "phone": "Телефон рақамингизни киритинг ёки улашинг:",
+        "thank_you": "Рахмат! Маълумотларингиз сақланди!",
+    },
+    "Rus": {
+        "start": "Пожалуйста, выберите язык:",
+        "name": "Введите ваше имя:",
+        "location": "Введите ваш город или область:",
+        "phone": "Введите или поделитесь своим номером телефона:",
+        "thank_you": "Спасибо! Ваши данные сохранены!",
+    },
+    "Eng": {
+        "start": "Please select your language:",
+        "name": "Enter your name:",
+        "location": "Enter your city or region:",
+        "phone": "Enter or share your phone number:",
+        "thank_you": "Thank you! Your data has been saved!",
+    },
+}
+
+# /start komandasi
+def start(update: Update, context: CallbackContext) -> int:
+    buttons = [
+        ["O'zbek lotin", "O'zbek krill"],
+        ["Rus", "Eng"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(buttons, one_time_keyboard=True)
+    update.message.reply_text("Iltimos, tilni tanlang:", reply_markup=reply_markup)
+    return LANGUAGE
+
+# Tilni tanlash
+def set_language(update: Update, context: CallbackContext) -> int:
+    language = update.message.text
+    user_data['language'] = language
+    update.message.reply_text(translations[language]["name"])
+    return NAME
+
+# Ismni olish
+def set_name(update: Update, context: CallbackContext) -> int:
+    user_data['name'] = update.message.text
+    language = user_data['language']
+    update.message.reply_text(translations[language]["location"])
+    return LOCATION
+
+# Viloyat yoki shaharni olish
+def set_location(update: Update, context: CallbackContext) -> int:
+    user_data['location'] = update.message.text
+    language = user_data['language']
+    button = KeyboardButton(translations[language]["phone"], request_contact=True)
+    reply_markup = ReplyKeyboardMarkup([[button]], one_time_keyboard=True)
+    update.message.reply_text(translations[language]["phone"], reply_markup=reply_markup)
+    return PHONE
+
+# Telefon raqamni olish
+def set_phone(update: Update, context: CallbackContext) -> int:
+    if update.message.contact:
+        user_data['phone'] = update.message.contact.phone_number
     else:
-        await message.reply("Qo'lingizda bunday karta yo'q!")
-
-# O'yin tugashi
-def check_winner(user_id):
-    if not games[user_id]['user_hand']:
-        return "Siz yutdingiz!"
-    elif not games[user_id]['bot_hand']:
-        return "Bot yutdi!"
-    return None
-
-# O'yin jarayonini kuzatish
-@dp.message_handler(commands=['status'])
-async def check_status(message: types.Message):
-    user_id = message.from_user.id
+        user_data['phone'] = update.message.text
     
-    if user_id not in games:
-        await message.reply("O'yin hali boshlanmadi. '/play' komandasi orqali o'yinni boshlang.")
-        return
+    language = user_data['language']
+    update.message.reply_text(
+        f"{translations[language]['thank_you']}\n\n"
+        f"Til: {language}\n"
+        f"Ism: {user_data['name']}\n"
+        f"Shahar: {user_data['location']}\n"
+        f"Telefon: {user_data['phone']}"
+    )
+    return ConversationHandler.END
 
-    user_hand = ', '.join(games[user_id]['user_hand'])
-    bot_hand_count = len(games[user_id]['bot_hand'])
-    
-    await message.reply(f"Sizning qo'lingiz: {user_hand}")
-    await message.reply(f"Botda {bot_hand_count} ta karta bor.")
+# Bekor qilish funksiyasi
+def cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("Jarayon bekor qilindi.")
+    return ConversationHandler.END
 
-# O'yinni tozalash
-@dp.message_handler(commands=['reset'])
-async def reset_game(message: types.Message):
-    user_id = message.from_user.id
-    
-    if user_id in games:
-        del games[user_id]
-        await message.reply("O'yin tozalandi. Yangi o'yin boshlash uchun '/play' komandasini kiriting.")
-    else:
-        await message.reply("O'yin hali boshlanmadi.")
+def main():
+    # Tokenni bu yerga qo'shing
+    updater = Updater("8140989674:AAERkKxQtwoI9NvAaNMZ125Q-9SjXpDlIB4")
+    dispatcher = updater.dispatcher
 
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    # Suhbat boshqaruvchisi
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            LANGUAGE: [MessageHandler(Filters.text & ~Filters.command, set_language)],
+            NAME: [MessageHandler(Filters.text & ~Filters.command, set_name)],
+            LOCATION: [MessageHandler(Filters.text & ~Filters.command, set_location)],
+            PHONE: [MessageHandler(Filters.contact | Filters.text & ~Filters.command, set_phone)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    dispatcher.add_handler(conv_handler)
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
